@@ -1,0 +1,90 @@
+@startuml
+title CSRF Exploitability Flow (Pentester’s Map)
+
+skinparam monochrome true
+skinparam shadowing false
+skinparam ArrowThickness 1
+
+start
+
+:'Collect request';
+:'Is action state-changing/sensitive?';
+if ("State-changing?") then (No)
+  :CSRF impact low/none;
+  stop
+else (Yes)
+endif
+
+:'Uses ambient creds? (Cookie/Basic/Client cert)';
+if ("Ambient credentials?") then (No)
+  :Classic CSRF unlikely;
+  stop
+else (Yes)
+endif
+
+:'Any XSS / on-site gadget?';
+if ("On-site JS/redirect gadget?") then (Yes)
+  :Exploit via same-site pivot (bypasses SameSite/Origin);
+  stop
+else (No)
+endif
+
+:'SameSite on session cookie';
+if ("SameSite=None or missing") then (Yes)
+  :Cookies sent cross-site;
+else (No)
+  if ("SameSite=Lax and top-level GET?") then (Yes)
+    :Cookies sent (Lax rules);
+  else (No)
+    if ("SameSite=Strict AND same-site gadget?") then (Yes)
+      :Chain into same-site secondary request;
+    else (No)
+      :Cookies not sent cross-site -> blocked here;
+      stop
+    endif
+  endif
+endif
+
+:'Is request SIMPLE? (GET/POST/HEAD,\nno custom headers,\nform/plain content-type)';
+if ("Simple request?") then (Yes)
+  :No preflight; browser will send;
+else (No)
+  :'Non-simple → CORS preflight';
+  if ("ACAO allows attacker origin\nAND ACA-Credentials: true") then (Yes)
+    :Credentialed cross-site allowed;
+  else (No)
+    :Preflight blocks → try downgrade to simple;
+    stop
+  endif
+endif
+
+:'Server CSRF defences present?';
+if ("Defences present?") then (Yes)
+  if ("Robust CSRF token validated?") then (Yes)
+    if ("Common token flaws?") then (Yes)
+      :Exploit token flaw (see checklist);
+    else (No)
+      if ("Strict Origin/Referer check?") then (Yes)
+        if ("Fetch-Metadata blocks cross-site?") then (Yes)
+          :Blocked unless same-site pivot;
+          stop
+        else (No)
+          :Likely blocked by Origin/Referer;
+          stop
+        endif
+      else (No)
+        :Lenient Origin/Referer → likely CSRFable;
+      endif
+    endif
+  else (No)
+    :No effective token → likely CSRFable;
+  endif
+else (No)
+  :No CSRF defences detected;
+endif
+
+:'Choose delivery vector\n(form auto-submit, top-level GET,\nimg/iframe, gadget chain)';
+:Craft PoC and verify impact;
+
+stop
+@enduml
